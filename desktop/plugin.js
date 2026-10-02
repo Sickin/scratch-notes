@@ -9,8 +9,8 @@
 // Disk plugins load uncompiled: only @hermes/plugin-sdk, react, and
 // react/jsx-runtime may be imported; write UI with jsx()/jsxs(), no JSX syntax.
 import {
-  Button, PANES_AREA, SegmentedControl, Streamdown, Tip, host, icons, queryClient,
-  useQuery, useValue,
+  Button, KEYBINDS_AREA, PALETTE_AREA, PANES_AREA, STATUSBAR_AREAS, SegmentedControl, Streamdown, Tip,
+  host, icons, queryClient, useQuery, useValue,
 } from '@hermes/plugin-sdk'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
@@ -560,5 +560,56 @@ export default {
       },
       render: () => jsx(NotesPane, { ctx }),
     })
+
+    // Ways to bring the pane back: it can be closed, sit behind another tab,
+    // or have its side collapsed. revealPane handles every one of those — it
+    // un-dismisses, re-adopts, expands the side, and fronts the tab.
+    const PANE_ID = `${ID}:pane`
+    const openNotes = () => {
+      if (typeof host.revealPane === 'function') host.revealPane(PANE_ID)
+    }
+
+    ctx.registerMany([
+      {
+        id: 'open-keybind',
+        area: KEYBINDS_AREA,
+        data: {
+          id: 'scratch-notes.open',
+          category: 'view',
+          // ⌘⌥J / Ctrl+Alt+J ("jot"). Core leaves ⌘⌥<letter> free for plugins;
+          // ⌘⌥N is already Kanban's. Rebindable in Settings → Keybinds.
+          defaults: ['mod+alt+j'],
+          label: 'Show Notes',
+          run: openNotes,
+        },
+      },
+      {
+        id: 'open-palette',
+        area: PALETTE_AREA,
+        data: {
+          id: 'scratch-notes.open',
+          action: 'scratch-notes.open', // shows the live keybind in ⌘K
+          label: 'Show Notes',
+          keywords: ['notes', 'scratch', 'scratchpad', 'todo', 'jot'],
+          run: openNotes,
+        },
+      },
+      {
+        id: 'open-statusbar',
+        area: STATUSBAR_AREAS.right,
+        order: 90,
+        data: {
+          id: 'scratch-notes.open',
+          icon: jsx(icons.FileText, { size: 13 }),
+          label: 'Notes',
+          title: 'Show Notes',
+          actionId: 'scratch-notes.open',
+          variant: 'action',
+          // Listed in the status bar's right-click menu so it can be hidden.
+          toggleLabel: 'Notes',
+          onSelect: openNotes,
+        },
+      },
+    ])
   },
 }
