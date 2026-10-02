@@ -376,7 +376,11 @@ function useResolvedNoteId(ctx, scope, cwd, sessionId) {
 
 function NotesPane({ ctx }) {
   const cwd = useValue(host.state.cwd)
-  const sessionId = useValue(host.state.focusedSessionId)
+  // The STORED (durable) session id, not focusedSessionId (a runtime id that
+  // changes every reload): the agent's note_add and /note --session key
+  // session notes by the stored id (tui_gateway builds the agent with
+  // session_id=<session key>), so this is the only id that opens the same file.
+  const sessionId = useValue(host.state.focusedStoredSessionId)
   const [scope, setScope] = useState(() => ctx.storage.get('local.scope', 'project'))
   const resolved = useResolvedNoteId(ctx, scope, cwd, sessionId)
   const noteId = resolved.data?.id ?? null
