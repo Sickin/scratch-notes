@@ -356,37 +356,82 @@ export function LiveEditor({ text, onText, editorApi, placeholder }) {
 // Pane
 // ---------------------------------------------------------------------------
 
+// `host.state.cwd` is the app's LIVE workspace folder. When the user selects
+// another chat, the focused chat id updates immediately but the folder only
+// follows once that chat has resumed (much later over SSH), so for a while the
+// folder still belongs to the PREVIOUS chat. Asking the backend for a project
+// note in that window opens the wrong project. The plugin can't see which chat
+// owns the folder, so after a chat switch it distrusts the folder until it
+// changes, or until it has stayed put long enough that it must be the same
+// project (switching between two chats of one project never changes it).
+export const CWD_SETTLE_MS = 1500
+
+// Pure state step: prev = { sessionId, baseline, since, trusted } | null.
+export function nextCwdTrust(prev, { sessionId, cwd, now }) {
+  const fresh = trusted => ({ sessionId: sessionId || null, baseline: cwd, since: now, trusted })
+  // First sight, or a draft with no stored chat yet: nothing to mis-attribute.
+  if (!sessionId || !prev) return fresh(true)
+  if (prev.sessionId !== sessionId) return fresh(false)
+  if (!prev.trusted && (cwd !== prev.baseline || now - prev.since >= CWD_SETTLE_MS)) {
+    return { ...prev, trusted: true }
+  }
+  return prev
+}
+
+function useSettledCwd(ctx, cwd, sessionId) {
+  const [trust, setTrust] = useState(() => nextCwdTrust(null, { sessionId, cwd, now: Date.now() }))
+  useEffect(() => {
+    const next = nextCwdTrust(trust, { sessionId, cwd, now: Date.now() })
+    if (next !== trust) { setTrust(next); return undefined }
+    if (trust.trusted) return undefined
+    const timer = ctx.setTimeout(
+      () => setTrust(nextCwdTrust(trust, { sessionId, cwd, now: Date.now() })),
+      Math.max(0, CWD_SETTLE_MS - (Date.now() - trust.since)),
+    )
+    return () => clearTimeout(timer)
+  }, [trust, sessionId, cwd])
+  // The render where the chat id changed still holds the old chat's trust.
+  return { cwd, settled: trust.sessionId === (sessionId || null) && trust.trusted }
+}
+
 // The gateway backend a desktop pane talks to is pooled per (connection,
 // profile) — its process cwd means nothing for "the project I'm looking at".
 // host.state.cwd is the client's own signal for that, so scope resolution
 // goes through GET /resolve rather than the backend's own os.getcwd().
-function useResolvedNoteId(ctx, scope, cwd, sessionId) {
+function useResolvedNoteId(ctx, scope, cwd, sessionId, cwdSettled) {
   return useQuery({
     queryKey: [ID, 'resolve', scope, cwd, sessionId],
+    retry: 1,
     queryFn: () => {
       const params = new URLSearchParams({ scope, cwd: cwd || '', session_id: sessionId || '' })
       return ctx.rest(`/resolve?${params}`)
     },
     // A session scope needs a real session id; an empty cwd means a detached
     // workspace (no project to key off), so don't ask the backend to fail.
-    enabled: scope === 'project' ? true : Boolean(sessionId),
+    // Project scope also waits for the folder to settle after a chat switch.
+    enabled: scope === 'project' ? cwdSettled : Boolean(sessionId),
     staleTime: 60000,
   })
 }
 
 function NotesPane({ ctx }) {
-  const cwd = useValue(host.state.cwd)
+  const liveCwd = useValue(host.state.cwd)
   // The STORED (durable) session id, not focusedSessionId (a runtime id that
   // changes every reload): the agent's note_add and /note --session key
   // session notes by the stored id (tui_gateway builds the agent with
   // session_id=<session key>), so this is the only id that opens the same file.
   const sessionId = useValue(host.state.focusedStoredSessionId)
+  const { cwd, settled } = useSettledCwd(ctx, liveCwd, sessionId)
   const [scope, setScope] = useState(() => ctx.storage.get('local.scope', 'project'))
-  const resolved = useResolvedNoteId(ctx, scope, cwd, sessionId)
-  const noteId = resolved.data?.id ?? null
+  const resolved = useResolvedNoteId(ctx, scope, cwd, sessionId, settled)
+  // While the folder is unsettled a cached answer for the previous folder may
+  // still be sitting under the old query key; never use it.
+  const ready = scope === 'session' || settled
+  const noteId = ready ? (resolved.data?.id ?? null) : null
 
   const note = useQuery({
     queryKey: [ID, 'note', noteId],
+    retry: 1,
     queryFn: () => ctx.rest(`/notes/${encodeURIComponent(noteId)}`).catch(err => {
       // A fresh scratchpad has no file yet — treat 404 as "empty", not an error.
       if (String(err?.message || err).includes('404')) return { id: noteId, content: '' }
@@ -405,13 +450,26 @@ function NotesPane({ ctx }) {
   const editorApi = useRef(null)
 
   // Adopt server content only when we land on a genuinely different note
-  // (scope/note switch) — never clobber in-progress typing on a refetch.
+  // (scope/note switch) — never clobber in-progress typing on a refetch. Until
+  // the new note arrives (or when there is none) show an empty editor, never
+  // the previous note's text: it would look like this note and could be saved
+  // into it.
   useEffect(() => {
-    if (note.data && loadedFor.current !== noteId) {
-      setText(note.data.content || '')
-      setDirty(false)
-      loadedFor.current = noteId
+    if (loadedFor.current === noteId) return
+    const previous = loadedFor.current
+    if (previous && dirty) {
+      // Don't drop the last second of typing when the user switches away.
+      ctx.rest(`/notes/${encodeURIComponent(previous)}`, { method: 'PUT', body: { content: text } })
+        .catch(() => setStatus('Save failed'))
     }
+    if (noteId && note.data) {
+      setText(note.data.content || '')
+      loadedFor.current = noteId
+    } else {
+      setText('')
+      loadedFor.current = null
+    }
+    setDirty(false)
   }, [note.data, noteId])
 
   function updateText(next) {
@@ -425,7 +483,9 @@ function NotesPane({ ctx }) {
   }
 
   function save() {
-    if (!noteId) return
+    // Never write a note we have not loaded: typing before it arrives would
+    // overwrite the real content with a fragment.
+    if (!noteId || loadedFor.current !== noteId) return
     ctx.rest(`/notes/${encodeURIComponent(noteId)}`, { method: 'PUT', body: { content: text } })
       .then(() => {
         setDirty(false)
@@ -473,7 +533,9 @@ function NotesPane({ ctx }) {
   }
 
   const sessionUnavailable = scope === 'session' && !sessionId
-  const noProject = scope === 'project' && !cwd
+  const settling = scope === 'project' && !settled
+  const noProject = scope === 'project' && settled && !cwd
+  const lookupFailed = !settling && !noProject && !sessionUnavailable && (resolved.isError || note.isError)
   // Toolbar buttons must not steal focus from the line being edited.
   const keepFocus = e => e.preventDefault()
 
@@ -487,7 +549,11 @@ function NotesPane({ ctx }) {
       children: 'No focused session — open or focus a chat to see its session notes.' }),
     noProject && jsx('div', { className: 'text-xs text-(--ui-text-tertiary) p-2',
       children: 'No active workspace — open a project to see its notes.' }),
-    !sessionUnavailable && !noProject && jsxs('div', { className: 'flex flex-1 flex-col gap-2 min-h-0', children: [
+    settling && jsx('div', { className: 'text-xs text-(--ui-text-tertiary) p-2',
+      children: 'Loading project…' }),
+    lookupFailed && jsx('div', { className: 'text-xs text-(--ui-text-tertiary) p-2',
+      children: 'Notes unavailable on this backend — its scratch-notes API did not respond. If you just enabled or updated the plugin, restart or reconnect the backend.' }),
+    !sessionUnavailable && !noProject && !settling && !lookupFailed && jsxs('div', { className: 'flex flex-1 flex-col gap-2 min-h-0', children: [
       jsxs('div', { className: 'flex items-center gap-1', children: [
         jsx(Tip, { label: 'Add / toggle to-do', children: jsx(Button, {
           variant: 'ghost', size: 'xs', disabled: !noteId, onMouseDown: keepFocus,

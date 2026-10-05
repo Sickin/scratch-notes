@@ -1,0 +1,9 @@
+{
+  "name": "scratch-notes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bootstrap": "node scripts/bootstrap-stubs.mjs",
+    "test": "node scripts/bootstrap-stubs.mjs && node --test"
+  }
+}
