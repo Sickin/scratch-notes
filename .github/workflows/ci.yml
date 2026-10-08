@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest
+      - name: Byte-compile every Python file
+        run: python -m compileall -q __init__.py storage.py dashboard tests
+      - name: Storage tests
+        run: pytest tests
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Syntax-check the desktop and dashboard plugins
+        run: |
+          node --check desktop/plugin.js
+          node --check dashboard/dist/index.js
+      - name: Editor tests
+        run: npm test

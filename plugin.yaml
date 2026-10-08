@@ -1,5 +1,10 @@
 name: scratch-notes
-version: "1.1.0"
-description: Markdown scratchpad, scoped per project or per session, with a dashboard editor
+version: "1.2.0"
+description: Markdown scratchpad scoped per project or per session, with a docked live-preview editor in Hermes Desktop and a note_add tool for the agent.
+author: Chris Bevins
+license: MIT
+homepage: https://github.com/Sickin/scratch-notes
+requires_hermes: ">=0.21.5"
+tags: [notes, scratchpad, markdown, todo, desktop]
 provides_tools:
   - note_add

@@ -17,16 +17,10 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 
 MAX_ARCHIVES_PER_NOTE = 5
-
-# Pre-1.1 storage location (project-scope only, un-profiled). Migrated
-# transparently on first access under the new layout so nobody's existing
-# notes vanish when this plugin moves to plugin-data/.
-LEGACY_NOTES_DIR = Path.home() / ".hermes" / "notes"
 
 _SESSION_ID_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
@@ -54,33 +48,10 @@ def resolve_note_id(scope: str, *, cwd: str | None = None, session_id: str = "")
     return project_note_id(cwd)
 
 
-def _migrate_legacy_project_file(data_dir: Path, note_id: str) -> None:
-    """One-time move of a pre-1.1 note (~/.hermes/notes/<name>-<hash>.md) into the
-    profile-scoped plugin-data dir. Best-effort: any failure just leaves the
-    legacy file in place and a fresh note starts empty next time.
-    """
-    if not note_id.startswith("project-"):
-        return
-    legacy_path = LEGACY_NOTES_DIR / (note_id[len("project-"):] + ".md")
-    new_path = data_dir / f"{note_id}.md"
-    if new_path.exists() or not legacy_path.exists():
-        return
-    try:
-        os.replace(legacy_path, new_path)
-    except OSError:
-        try:
-            shutil.copy2(legacy_path, new_path)
-        except OSError:
-            pass
-
-
 def note_path(data_dir: Path, scope: str, *, cwd: str | None = None, session_id: str = "") -> Path:
-    """Resolve (and, for project scope, migrate) the on-disk path for *scope*."""
-    cwd = cwd or os.getcwd()
+    """Resolve the on-disk path for *scope*, creating *data_dir* if needed."""
     note_id = resolve_note_id(scope, cwd=cwd, session_id=session_id)
     data_dir.mkdir(parents=True, exist_ok=True)
-    if scope == "project":
-        _migrate_legacy_project_file(data_dir, note_id)
     return data_dir / f"{note_id}.md"
 
 

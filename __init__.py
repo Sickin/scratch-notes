@@ -1,9 +1,10 @@
 # __init__.py
 """scratch-notes — a per-project / per-session markdown scratchpad.
 
-Storage: PluginState's profile-scoped data dir (<HERMES_HOME>/plugin-data/scratch-notes/),
-never inside the project tree — so it's never part of the git repo and needs no
-.gitignore entry, and each Hermes profile keeps its own notes. See storage.py.
+Notes live in the profile-scoped plugin data dir
+(<HERMES_HOME>/plugin-data/scratch-notes/), never inside the project tree, so
+they're never part of the git repo and each Hermes profile keeps its own. See
+storage.py for the file layout.
 """
 import json
 

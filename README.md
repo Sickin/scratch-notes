@@ -118,7 +118,7 @@ One package covers every Hermes plugin surface, and all of them read and write t
 | Agent plugin | `__init__.py`, `storage.py` | The `note_add` tool and the `/note` and `/note-clear` commands |
 | Backend API | `dashboard/plugin_api.py` | REST routes at `/api/plugins/scratch-notes/` |
 | Desktop panel | `desktop/plugin.js` | The docked live-preview editor |
-| Browser dashboard tab | `dashboard/manifest.json`, `dashboard/dist/index.js` | A basic editor in `hermes dashboard` |
+| Browser dashboard tab | `dashboard/manifest.json`, `dashboard/dist/index.js` | A basic editor in `hermes dashboard`. **Experimental:** it hasn't been tested against a running dashboard. |
 
 ## Troubleshooting
 
@@ -128,15 +128,22 @@ One package covers every Hermes plugin surface, and all of them read and write t
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR, run:
+Issues and pull requests are welcome. Before opening a PR, run the tests:
 
 ```bash
+# Storage tests (any Python 3.10+ with pytest; no Hermes install needed)
+pytest tests
+
+# Editor tests (Node 22+)
+npm install
+npm test
+
+# Full plugin check (needs Hermes installed)
 hermes plugins validate .
-node --check desktop/plugin.js
 ```
+
+CI runs the first two on every push and pull request. `package.json` only holds test dependencies; Hermes loads `desktop/plugin.js` directly and nothing from `node_modules` ships to users.
 
 ## License
 
-<!-- ⚠️ TODO before going public: choose a license, add a LICENSE file, and set
-     `license:` in plugin.yaml. MIT is the common choice for Hermes plugins. -->
-See [LICENSE](LICENSE).
+[MIT](LICENSE)

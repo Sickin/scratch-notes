@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { nextCwdTrust, CWD_SETTLE_MS } from '../desktop/plugin.js'
+import { loadPlugin } from './load-plugin.mjs'
+
+const { nextCwdTrust, CWD_SETTLE_MS } = await loadPlugin()
 
 const at = (state, input) => nextCwdTrust(state, { now: 0, ...input })
 
